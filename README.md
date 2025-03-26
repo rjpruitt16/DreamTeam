@@ -18,6 +18,7 @@ Responsible for real-time voice interactions with Discord clients.
 
 ### 👻 Ghostwriter (Python + LangChain + OpenAI)
 
+### 🧠 Voice Agent
 Serves as the primary intelligence behind the bot, managing streaming input/output via gRPC.
 
 **Capabilities:**
