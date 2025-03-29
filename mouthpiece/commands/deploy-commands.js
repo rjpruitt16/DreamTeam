@@ -1,5 +1,5 @@
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
-require('dotenv').config();
+require('dotenv').config({ path: "../../.env"}); // Only for Rahmi, you need to change it
 
 const commands = [
   new SlashCommandBuilder().setName('join').setDescription('Join your voice channel'),
