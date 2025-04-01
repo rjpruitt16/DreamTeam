@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package voice;
+
+service VoiceService {
+  rpc ProcessAudio (AudioRequest) returns (stream AudioResponse);
+}
+
+message AudioRequest {
+  bytes audio_data = 1; // PCM or WAV
+  string format = 2;    // "pcm" or "wav"
+}
+
+message AudioResponse {
+  string transcript = 1;     // Transcribed text
+  bytes audio_data = 2;      // Generated response in WAV
+  bool is_final = 3;
+}
