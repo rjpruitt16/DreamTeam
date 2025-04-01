@@ -103,7 +103,7 @@ function startRecording(connection, guildId) {
     });
 
     const opusStream = connection.receiver.subscribe(userId, {
-      end: { behavior: EndBehaviorType.AfterSilence, duration: 3000 }
+      end: { behavior: EndBehaviorType.AfterSilence, duration: 1000 }
     });
 
     pipeline(opusStream, opusDecoder, fileStream, (err) => {

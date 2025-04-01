@@ -32,105 +32,74 @@ const client = new voiceProto.VoiceService(
 
 function processAudio(filePath, format, connection) {
   return new Promise((resolve, reject) => {
-    try {
-      const audioData = fs.readFileSync(filePath);
+    // Read the audio file
+    const audioData = fs.readFileSync(filePath);
+    
+    // Create a player for streaming audio
+    const player = createAudioPlayer();
+    connection.subscribe(player);
+    
+    // Track if we've started playing audio
+    let isPlaying = false;
+    let transcriptText = '';
+    let tempFiles = [];
+    
+    // Call the gRPC service
+    const stream = client.ProcessAudio({ audio_data: audioData });
+    
+    stream.on('data', (response) => {
+      // Handle transcript data
+      if (response.transcript) {
+        transcriptText = response.transcript;
+        console.log(`📝 Transcript: ${transcriptText}`);
+      }
       
-      console.log('🚀 Sending Audio Request:', {
-        audioDataLength: audioData.length,
-        format
-      });
-
-      // Create a simple request object
-      const request = {
-        audio_data: audioData,
-        format: format
-      };
-
-      // Get the stream response
-      const stream = client.processAudio(request);
-      let transcriptText = '';
-      let player = null;
-      let audioChunks = []; // To collect audio data
-      
-      // Handle data events from the stream
-      stream.on('data', (response) => {
-        console.log('📊 Received stream data chunk');
+      // Handle audio data as it arrives in chunks
+      if (response.audio_data && response.audio_data.length > 0) {
+        // Create a temporary file for this chunk
+        const tempPath = path.join(__dirname, `../temp-chunk-${Date.now()}.opus`);
+        fs.writeFileSync(tempPath, response.audio_data);
+        tempFiles.push(tempPath);
         
-        if (response.transcript && response.transcript.length > 0) {
-          transcriptText = response.transcript;
-          console.log('📝 Received transcript:', transcriptText);
-        }
+        // Create an audio resource from this chunk
+        const resource = createAudioResource(tempPath, {
+          inputType: StreamType.Opus,
+        });
         
-        if (response.audio_data && response.audio_data.length > 0) {
-          console.log(`🔊 Received audio data chunk of size: ${response.audio_data.length} bytes`);
-          console.log(`🔍 Audio data type: ${typeof response.audio_data}, isBuffer: ${Buffer.isBuffer(response.audio_data)}`);
-          
-          // Collect audio data for later playback
-          audioChunks.push(response.audio_data);
-        }
-      });
-
-      // Handle end of stream
-      stream.on('end', () => {
-        console.log('🏁 Stream ended');
-        
-        if (audioChunks.length > 0) {
-          // Combine all chunks into a single buffer
-          let combinedBuffer;
-          
-          if (audioChunks.length === 1) {
-            combinedBuffer = Buffer.from(audioChunks[0]);
-          } else {
-            // Multiple chunks need to be combined
-            combinedBuffer = Buffer.concat(audioChunks.map(chunk => Buffer.from(chunk)));
-          }
-          
-          console.log(`🔊 Combined audio data size: ${combinedBuffer.length} bytes`);
-          
-          // Save the file for debugging/backup
-          const outputPath = filePath.replace('.pcm', '_response.opus');
-          fs.writeFileSync(outputPath, combinedBuffer);
-          console.log(`✅ Audio response saved to ${outputPath}`);
-          
-          // Now play the audio if we have a connection
-          if (connection) {
-            try {
-              player = createAudioPlayer();
-              connection.subscribe(player);
-              
-              const resource = createAudioResource(outputPath, {
-                inputType: StreamType.Opus,
-                inlineVolume: true
-              });
-              
-              player.play(resource);
-              console.log('🎵 Playing audio from file');
-            } catch (playErr) {
-              console.error('❌ Error playing audio:', playErr);
-            }
-          }
-          
-          resolve({ 
-            transcript: transcriptText, 
-            audioPath: outputPath, 
-            player: player 
-          });
+        // If we're not already playing, start playing
+        if (!isPlaying) {
+          player.play(resource);
+          isPlaying = true;
         } else {
-          console.error('❌ No audio data received in stream');
-          reject(new Error('No audio data received'));
+          // Queue this chunk to play next when the current one finishes
+          player.once(AudioPlayerStatus.Idle, () => {
+            player.play(resource);
+          });
         }
+      }
+    });
+    
+    stream.on('end', () => {
+      console.log('✅ Stream completed');
+      
+      // Clean up temp files when done playing
+      player.once(AudioPlayerStatus.Idle, () => {
+        tempFiles.forEach(file => {
+          try {
+            fs.unlinkSync(file);
+          } catch (err) {
+            console.error(`Failed to delete temp file ${file}:`, err);
+          }
+        });
       });
-
-      // Handle errors
-      stream.on('error', (err) => {
-        console.error('❌ Stream error:', err);
-        reject(err);
-      });
-
-    } catch (readErr) {
-      console.error('❌ Error reading audio file:', readErr);
-      reject(readErr);
-    }
+      
+      resolve({ transcript: transcriptText });
+    });
+    
+    stream.on('error', (err) => {
+      console.error('❌ Error in gRPC stream:', err);
+      reject(err);
+    });
   });
 }
 
