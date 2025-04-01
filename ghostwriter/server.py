@@ -5,6 +5,7 @@ import os
 import openai
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+import time
 
 # Enable verbose mode based on ENV or set to False
 VERBOSE = os.getenv("VERBOSE", "false").lower() == "true"
@@ -47,16 +48,17 @@ class VoiceServiceServicer(voice_service_pb2_grpc.VoiceServiceServicer):
             # Step 2: Process with GPT
             print("🧠 Processing with GPT...")
             gpt_response = openai.chat.completions.create(
-                model="gpt-4",
+                model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "You are a helpful Discord bot."},
                     {"role": "user", "content": transcription}
-                ]
+                ],
+                max_tokens=150
             )
             gpt_output = gpt_response.choices[0].message.content
             print(f"💬 GPT Response: {gpt_output}")
 
-            # Step 3: Convert GPT Response to Speech
+            # Step 3: Convert GPT Response to Speech with streaming
             print("🗣️ Converting GPT output to speech...")
             tts_response = openai.audio.speech.create(
                 model="tts-1",
@@ -64,13 +66,21 @@ class VoiceServiceServicer(voice_service_pb2_grpc.VoiceServiceServicer):
                 input=gpt_output,
                 response_format="opus"  # Request OPUS instead of MP3
             )
-
-            # Stream the final audio response
-            yield voice_service_pb2.AudioResponse(
-                transcript="",
-                audio_data=tts_response.content,
-                is_final=True
-            )
+            
+            # Stream the audio in smaller chunks (e.g., 64KB chunks)
+            CHUNK_SIZE = 64 * 1024  # 64KB chunks
+            audio_content = tts_response.content
+            
+            # Send audio in chunks for faster streaming
+            for i in range(0, len(audio_content), CHUNK_SIZE):
+                chunk = audio_content[i:i+CHUNK_SIZE]
+                yield voice_service_pb2.AudioResponse(
+                    transcript="",
+                    audio_data=chunk,
+                    is_final=(i + CHUNK_SIZE >= len(audio_content))
+                )
+                # Small delay to prevent overwhelming the client
+                time.sleep(0.01)
 
             # Cleanup temporary files
             os.remove(pcm_path)

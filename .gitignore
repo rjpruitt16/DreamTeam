@@ -3,3 +3,6 @@ ngrok.yml
 .DS_Store
 recordings/
 __pycache__/
+*.log
+*.tmp
+node_modules/
