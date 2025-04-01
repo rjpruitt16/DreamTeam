@@ -1,3 +1,5 @@
 .env
 ngrok.yml
 .DS_Store
+recordings/
+__pycache__/
